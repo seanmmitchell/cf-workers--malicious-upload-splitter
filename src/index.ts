@@ -1,5 +1,9 @@
+import { env } from "cloudflare:workers";
+
 interface Env {
 	MUS: R2Bucket;
+	ORIGIN: String;
+	API_KEY: string;
 }
 
 export default {
@@ -25,6 +29,16 @@ export default {
 };
 
 
+type fileData = {
+	Success: boolean
+	Filename: string
+	Reason: string
+}
+type uploadWAFAPIResponse = {
+	Success: string // false, true, or partial
+	Files: fileData[]
+}
+var uploadResults: fileData[] = []
 async function handleUpload(request: Request, bucket: R2Bucket): Promise<Response> {
 	try {
 		if (request.method !== 'POST') {
@@ -39,17 +53,9 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 		}
 
 		// Attempt to Upload Files Individually
-		type fileData = {
-			Success: boolean
-			Filename: string
-			Reason: string
-		}
-		type uploadWAFAPIResponse = {
-			Success: string // false, true, or partial
-			Files: fileData[]
-		}
+
 		let uploadFailed = false
-		let uploadResults: fileData[] = []
+
 
 		const uploadPromises = fileData2.map(async (file) => {
 			if (file instanceof File) {
@@ -66,7 +72,7 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 					)
 
 					console.log(`\t>> ${file.name} -- checking....`)
-					const response = await fetch('https://bfa.srnd.net/upload?fn=' + encodeURI(file.name), {
+					const response = await fetch(env.ORIGIN + '/upload?fn=' + encodeURI(file.name), {
 						method: 'POST',
 						headers: newHeaders,
 						body: uploadFormData,
@@ -87,7 +93,7 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 							if (x.Success == true && x.Message == "Malicious") {
 								// Malicious Upload Prevented
 								console.log(`${file.name} -- file is malicious`)
-								uploadFailed = true
+								uploadFailed = false
 								let finalRes: fileData = {
 									Success: true,
 									Filename: file.name,
@@ -95,16 +101,8 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 								}
 								uploadResults.push(finalRes)
 
-								const promises = fileData2.map((file) => {
-									if (file instanceof File) {
-										const filename = file.name;
-										return bucket.put(filename, file.stream());
-									} else {
-										throw new Error('Invalid file type');
-									}
-								});
-
-								await Promise.all(promises);
+								// Store malicious file in R2 bucket
+								await storeFileInR2(bucket, file.name, file.stream());
 							}
 							else if (x.Success == false && x.Message == "Failed") {
 								// Failed Upload Scan 
@@ -129,19 +127,20 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 								await Promise.all(promises);
 							}
 							else if (x.Success == true && x.Message == "Scanned") {
-								// Upload Scanned & Clean 
-								console.log(`${file.name} -- scanned and clean`)
+								console.log(`${file.name} -- file is clean`)
+								uploadFailed = false
 								let finalRes: fileData = {
-									Success: false,
+									Success: true,
 									Filename: file.name,
-									Reason: "Failed"
+									Reason: "Clean"
 								}
 								uploadResults.push(finalRes)
-								return
+
+								await passThroughSuccessResponse(file, responseText)
 							}
 							else {
 								// Unknown error response in cfWAFResponse format.
-								uploadFailed = true
+								uploadFailed = false
 								let finalRes: fileData = {
 									Success: false,
 									Filename: file.name,
@@ -178,12 +177,16 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 							uploadResults.push(finalRes)
 						}
 					} else {
-						let finalRes: fileData = {
-							Success: true,
-							Filename: file.name,
-							Reason: "Scanned"
-						}
-						uploadResults.push(finalRes)
+								console.log(`${file.name} -- file is clean`)
+								uploadFailed = false
+								let finalRes: fileData = {
+									Success: true,
+									Filename: file.name,
+									Reason: "Clean"
+								}
+								uploadResults.push(finalRes)
+
+								await passThroughSuccessResponse(file, await response.text())
 					}
 				} catch (error) {
 					if (error instanceof Error) {
@@ -217,6 +220,28 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 			}
 		}
 		return new Response('Internal Server Error: Failed to upload files', { status: 500 });
+	}
+}
+
+
+function passThroughSuccessResponse(file: any, responseText: string) {
+	// Upload Scanned & is Clean 
+	console.log(`${file.name} -- scanned and clean`)
+	let finalRes: fileData = {
+		Success: true,
+		Filename: file.name,
+		Reason: responseText
+	}
+	uploadResults.push(finalRes)
+	return
+}
+
+
+async function storeFileInR2(bucket: R2Bucket, filename: string, fileStream: ReadableStream) {
+	try {
+		await bucket.put(filename, fileStream);
+	} catch (error) {
+		console.error(`Error storing ${filename} in R2 bucket: ${error}`);
 	}
 }
 

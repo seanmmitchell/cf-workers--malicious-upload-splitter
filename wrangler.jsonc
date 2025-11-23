@@ -15,5 +15,23 @@
 			"binding": "MUS",
 			"bucket_name": "mus-srnd-net"
 		}
-	]
+	],
+	"vars": {
+		"API_KEY": "",
+		"ORIGIN": "https://bfa.srnd.net/"
+	},
+	"routes": [
+		{
+			"pattern": "mus.srnd.net",
+			"zone_name": "srnd.net",
+			"custom_domain": true
+		},
+		{
+			"pattern": "upload.srnd.net",
+			"zone_name": "upload.srnd.net",
+			"custom_domain": true
+		}
+	],
+	"workers_dev": true,
+	"preview_urls": true
 }
