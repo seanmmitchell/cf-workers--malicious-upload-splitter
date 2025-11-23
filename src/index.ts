@@ -2,8 +2,8 @@ import { env } from "cloudflare:workers";
 
 interface Env {
 	MUS: R2Bucket;
-	ORIGIN: String;
-	API_KEY: string;
+	ORIGIN: string;
+	AuthKey: string;
 }
 
 export default {
@@ -15,15 +15,22 @@ export default {
 		const url = new URL(request.url);
 		const path = url.pathname;
 
+		if (request.method === "POST" && path === '/') {
+			return handleUpload(request, env.MUS);
+		} else if (request.method === "POST" && path === '/upload') {
+			return handleUpload(request, env.MUS);
+		} else if (path.startsWith('/file/')) {
+			// Retrieve the Authorization header
+			const authHeader = request.headers.get('Authorization');
 
-		if (path === '/') {
-			return handleUpload(request, env.MUS);
-		} else if (path === '/upload') {
-			return handleUpload(request, env.MUS);
-		} else if (path.startsWith('/file')) {
+			// Compare it to the Environment Variable
+			if (!authHeader || authHeader !== env.AuthKey) {
+				return new Response('Forbidden', { status: 403 });
+			}
+
 			return handleR2Request(request, env.MUS);
 		} else {
-			return new Response('Not found', { status: 404 });
+			return new Response('Not Found', { status: 404 });
 		}
 	},
 };
@@ -72,7 +79,7 @@ async function handleUpload(request: Request, bucket: R2Bucket): Promise<Respons
 					)
 
 					console.log(`\t>> ${file.name} -- checking....`)
-					const response = await fetch(env.ORIGIN + '/upload?fn=' + encodeURI(file.name), {
+					const response = await fetch(env.Origin + '/upload?fn=' + encodeURI(file.name), {
 						method: 'POST',
 						headers: newHeaders,
 						body: uploadFormData,
@@ -259,7 +266,7 @@ async function handleR2Request(request: Request, bucket: R2Bucket): Promise<Resp
 		case 'PUT':
 			return putObject(bucket, path, request);
 		default:
-			return new Response('Method not allowed', { status: 405 });
+			return new Response('Method Not Allowed', { status: 405 });
 	}
 }
 

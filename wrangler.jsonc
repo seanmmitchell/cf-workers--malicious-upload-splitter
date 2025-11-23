@@ -1,7 +1,3 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "cf-workers--malicious-upload-splicer",
@@ -17,8 +13,8 @@
 		}
 	],
 	"vars": {
-		"API_KEY": "",
-		"ORIGIN": "https://bfa.srnd.net/"
+		"Origin": "https://bfa.srnd.net/",
+		//"AuthKey": "<secret defined in dash, do not uncomment here, after deploying, secret is used from dash config in edge.
 	},
 	"routes": [
 		{

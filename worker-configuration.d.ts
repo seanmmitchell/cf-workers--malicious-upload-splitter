@@ -6,8 +6,8 @@ declare namespace Cloudflare {
 		mainModule: typeof import("./src/index");
 	}
 	interface Env {
-		API_KEY: "";
-		ORIGIN: "";
+		AuthKey: "";
+		Origin: "";
 		MUS: R2Bucket;
 	}
 }
